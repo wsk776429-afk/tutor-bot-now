@@ -56,6 +56,9 @@ All colors MUST be HSL.
     --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(217 91% 70%));
     --gradient-accent: linear-gradient(135deg, hsl(25 95% 53%), hsl(25 95% 63%));
     --gradient-hero: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(217 91% 50%) 50%, hsl(25 95% 53%) 100%);
+    --gradient-bg: radial-gradient(circle at 20% 50%, hsl(217 91% 95%) 0%, transparent 50%),
+                   radial-gradient(circle at 80% 80%, hsl(25 95% 95%) 0%, transparent 50%),
+                   radial-gradient(circle at 40% 20%, hsl(217 91% 96%) 0%, transparent 40%);
     
     --shadow-sm: 0 2px 8px hsl(217 91% 60% / 0.08);
     --shadow-md: 0 4px 16px hsl(217 91% 60% / 0.12);
@@ -108,6 +111,9 @@ All colors MUST be HSL.
     --sidebar-border: 215 28% 18%;
     --sidebar-ring: 217 91% 60%;
     
+    --gradient-bg: radial-gradient(circle at 20% 50%, hsl(217 91% 15%) 0%, transparent 50%),
+                   radial-gradient(circle at 80% 80%, hsl(25 95% 15%) 0%, transparent 50%);
+    
     --shadow-sm: 0 2px 8px hsl(0 0% 0% / 0.3);
     --shadow-md: 0 4px 16px hsl(0 0% 0% / 0.4);
     --shadow-lg: 0 8px 32px hsl(0 0% 0% / 0.5);
@@ -121,5 +127,20 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    background-image: var(--gradient-bg);
+    background-attachment: fixed;
+  }
+  
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+  
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
   }
 }
