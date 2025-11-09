@@ -3,13 +3,13 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { VoiceControls } from "@/components/VoiceControls";
 import { FileUpload } from "@/components/FileUpload";
 import { ChatSidebar } from "@/components/ChatSidebar";
-import { ImageGenerator } from "@/components/ImageGenerator";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Loader2, MessageSquare, Sparkles } from "lucide-react";
+import { Send, Loader2, Sparkles, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
@@ -34,9 +34,17 @@ const Index = () => {
     { id: "1", title: "New Chat", timestamp: new Date() },
   ]);
   const [currentSessionId, setCurrentSessionId] = useState("1");
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const { toast } = useToast();
+
+  // Auto-detect if input looks like an image prompt
+  const looksLikeImagePrompt = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const keywords = ["diagram", "illustration", "draw", "image", "picture", "sketch", "chart", "plot", "visualize"];
+    return keywords.some(k => lower.includes(k)) || /^(diagram|illustration|draw|image):/i.test(text);
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -67,6 +75,13 @@ const Index = () => {
     setIsLoading(true);
 
     try {
+      // Auto-detect if this should be an image generation request
+      if (looksLikeImagePrompt(messageText)) {
+        await handleImageGeneration(messageText);
+        return;
+      }
+
+      // Regular chat flow
       const { data, error } = await supabase.functions.invoke("homework-chat", {
         body: { 
           messages: [...messages, userMessage].map(m => ({
@@ -102,6 +117,47 @@ const Index = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to get response",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleImageGeneration = async (prompt: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-image", {
+        body: { prompt },
+      });
+
+      if (error) throw error;
+
+      setGeneratedImage(data.imageUrl);
+      
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: `Generated an image based on: "${prompt}". Check the preview panel on the right!`,
+        agent: "Image Generator",
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      toast({
+        title: "Image generated!",
+        description: "See the preview panel on the right",
+      });
+    } catch (error: any) {
+      console.error("Image generation error:", error);
+      
+      const errorMessage: Message = {
+        role: "assistant",
+        content: `Failed to generate image. ${error.message || "Please try rephrasing your prompt."}`,
+        agent: "Image Generator",
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+
+      toast({
+        title: "Generation failed",
+        description: error.message || "Please try again",
         variant: "destructive",
       });
     } finally {
@@ -236,86 +292,123 @@ const Index = () => {
 
       <div className="flex-1 flex flex-col relative z-10">
         <header className="border-b border-border bg-card/80 backdrop-blur-xl px-6 py-4 shadow-sm">
-          <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Homework Helper 24/7
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Your AI-powered study assistant
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-primary" />
+                AstraMind AI
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Unified chat + image generation for students
+              </p>
+            </div>
+            <ThemeSwitcher />
+          </div>
         </header>
 
         <ScrollArea className="flex-1 p-6">
-          <div className="max-w-4xl mx-auto">
-            <Tabs defaultValue="chat" className="w-full">
-              <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
-                <TabsTrigger value="chat" className="gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  Chat
-                </TabsTrigger>
-                <TabsTrigger value="image" className="gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  Generate Image
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="chat" className="space-y-4">
-                {messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-                    <div className="w-20 h-20 rounded-full bg-gradient-primary flex items-center justify-center mb-6 shadow-lg">
-                      <span className="text-4xl">🧠</span>
-                    </div>
-                    <h2 className="text-3xl font-bold mb-3">
-                      Welcome to Homework Helper!
-                    </h2>
-                    <p className="text-muted-foreground max-w-md mb-8">
-                      Ask me anything about math, writing, coding, or research. I'm here to help you learn 24/7!
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 max-w-2xl">
-                      {[
-                        { icon: "📐", text: "Help with math problems" },
-                        { icon: "✍️", text: "Writing assistance" },
-                        { icon: "💻", text: "Coding questions" },
-                        { icon: "📚", text: "Research topics" },
-                      ].map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleSendMessage(item.text)}
-                          className="p-4 rounded-xl border border-border hover:border-primary hover:bg-muted/50 transition-smooth text-left"
-                        >
-                          <span className="text-2xl mb-2 block">{item.icon}</span>
-                          <span className="text-sm font-medium">{item.text}</span>
-                        </button>
-                      ))}
-                    </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+            <div className="lg:col-span-2 space-y-4">
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                  <div className="w-20 h-20 rounded-full bg-gradient-primary flex items-center justify-center mb-6 shadow-lg">
+                    <Sparkles className="w-10 h-10 text-white" />
                   </div>
-                ) : (
-                  <>
-                    {messages.map((message, index) => (
-                      <ChatMessage key={index} {...message} />
+                  <h2 className="text-3xl font-bold mb-3">
+                    Welcome to AstraMind AI!
+                  </h2>
+                  <p className="text-muted-foreground max-w-md mb-8">
+                    Your unified assistant for chat and image generation. Just type naturally - I'll auto-detect if you want an image or conversation!
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 max-w-2xl">
+                    {[
+                      { icon: "📐", text: "diagram: water cycle with labels" },
+                      { icon: "💬", text: "Explain photosynthesis simply" },
+                      { icon: "🎨", text: "illustration: neuron structure" },
+                      { icon: "📚", text: "Help with algebra homework" },
+                    ].map((item, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSendMessage(item.text)}
+                        className="p-4 rounded-xl border border-border hover:border-primary hover:bg-muted/50 transition-smooth text-left"
+                      >
+                        <span className="text-2xl mb-2 block">{item.icon}</span>
+                        <span className="text-sm font-medium">{item.text}</span>
+                      </button>
                     ))}
-                    {isLoading && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-sm">Thinking...</span>
-                      </div>
-                    )}
-                  </>
-                )}
-                <div ref={scrollRef} />
-              </TabsContent>
-
-              <TabsContent value="image" className="space-y-6">
-                <div className="max-w-2xl mx-auto">
-                  <div className="text-center space-y-2 mb-6">
-                    <h3 className="text-2xl font-bold">Generate Educational Images</h3>
-                    <p className="text-muted-foreground">
-                      Create diagrams, illustrations, or visual aids for your studies
+                  </div>
+                  <div className="mt-8 p-4 rounded-lg bg-muted/50 max-w-xl">
+                    <p className="text-xs text-muted-foreground">
+                      <strong>💡 Tip:</strong> Start with "diagram:", "illustration:", or "draw:" for images. 
+                      Regular questions trigger chat mode automatically.
                     </p>
                   </div>
-                  <ImageGenerator />
                 </div>
-              </TabsContent>
-            </Tabs>
+              ) : (
+                <>
+                  {messages.map((message, index) => (
+                    <ChatMessage key={index} {...message} />
+                  ))}
+                  {isLoading && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Processing...</span>
+                    </div>
+                  )}
+                </>
+              )}
+              <div ref={scrollRef} />
+            </div>
+
+            <div className="lg:col-span-1">
+              <Card className="p-4 sticky top-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4" />
+                    Image Preview
+                  </h3>
+                </div>
+                <div className="aspect-square rounded-lg bg-muted/30 flex items-center justify-center overflow-hidden border border-border">
+                  {generatedImage ? (
+                    <img 
+                      src={generatedImage} 
+                      alt="Generated" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="text-center p-6">
+                      <ImageIcon className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
+                      <p className="text-sm text-muted-foreground">
+                        No image yet. Try: "diagram: solar system with labels"
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {generatedImage && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full mt-3"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = generatedImage;
+                      a.download = "astramind-image.png";
+                      a.click();
+                    }}
+                  >
+                    Download Image
+                  </Button>
+                )}
+                <div className="mt-4 p-3 rounded-lg bg-muted/50 text-xs space-y-2">
+                  <p className="font-medium">Quick examples:</p>
+                  <ul className="space-y-1 text-muted-foreground">
+                    <li>• diagram: photosynthesis process</li>
+                    <li>• illustration: atom structure</li>
+                    <li>• draw: human heart labeled</li>
+                  </ul>
+                </div>
+              </Card>
+            </div>
           </div>
         </ScrollArea>
 
@@ -327,7 +420,7 @@ const Index = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              placeholder="Ask me anything..."
+              placeholder="Ask anything or request an image (e.g., 'diagram: water cycle')..."
               disabled={isLoading}
               className="flex-1 transition-smooth focus:ring-2 focus:ring-primary"
             />
