@@ -3,11 +3,13 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { VoiceControls } from "@/components/VoiceControls";
 import { FileUpload } from "@/components/FileUpload";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { ImageGenerator } from "@/components/ImageGenerator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, MessageSquare, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
@@ -243,50 +245,77 @@ const Index = () => {
         </header>
 
         <ScrollArea className="flex-1 p-6">
-          <div className="max-w-3xl mx-auto">
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-                <div className="w-20 h-20 rounded-full bg-gradient-primary flex items-center justify-center mb-6 shadow-lg">
-                  <span className="text-4xl">🧠</span>
-                </div>
-                <h2 className="text-3xl font-bold mb-3">
-                  Welcome to Homework Helper!
-                </h2>
-                <p className="text-muted-foreground max-w-md mb-8">
-                  Ask me anything about math, writing, coding, or research. I'm here to help you learn 24/7!
-                </p>
-                <div className="grid grid-cols-2 gap-3 max-w-2xl">
-                  {[
-                    { icon: "📐", text: "Help with math problems" },
-                    { icon: "✍️", text: "Writing assistance" },
-                    { icon: "💻", text: "Coding questions" },
-                    { icon: "📚", text: "Research topics" },
-                  ].map((item, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleSendMessage(item.text)}
-                      className="p-4 rounded-xl border border-border hover:border-primary hover:bg-muted/50 transition-smooth text-left"
-                    >
-                      <span className="text-2xl mb-2 block">{item.icon}</span>
-                      <span className="text-sm font-medium">{item.text}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
-                {messages.map((message, index) => (
-                  <ChatMessage key={index} {...message} />
-                ))}
-                {isLoading && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Thinking...</span>
+          <div className="max-w-4xl mx-auto">
+            <Tabs defaultValue="chat" className="w-full">
+              <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+                <TabsTrigger value="chat" className="gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Chat
+                </TabsTrigger>
+                <TabsTrigger value="image" className="gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Generate Image
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="chat" className="space-y-4">
+                {messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                    <div className="w-20 h-20 rounded-full bg-gradient-primary flex items-center justify-center mb-6 shadow-lg">
+                      <span className="text-4xl">🧠</span>
+                    </div>
+                    <h2 className="text-3xl font-bold mb-3">
+                      Welcome to Homework Helper!
+                    </h2>
+                    <p className="text-muted-foreground max-w-md mb-8">
+                      Ask me anything about math, writing, coding, or research. I'm here to help you learn 24/7!
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 max-w-2xl">
+                      {[
+                        { icon: "📐", text: "Help with math problems" },
+                        { icon: "✍️", text: "Writing assistance" },
+                        { icon: "💻", text: "Coding questions" },
+                        { icon: "📚", text: "Research topics" },
+                      ].map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleSendMessage(item.text)}
+                          className="p-4 rounded-xl border border-border hover:border-primary hover:bg-muted/50 transition-smooth text-left"
+                        >
+                          <span className="text-2xl mb-2 block">{item.icon}</span>
+                          <span className="text-sm font-medium">{item.text}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {messages.map((message, index) => (
+                      <ChatMessage key={index} {...message} />
+                    ))}
+                    {isLoading && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">Thinking...</span>
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-            <div ref={scrollRef} />
+                <div ref={scrollRef} />
+              </TabsContent>
+
+              <TabsContent value="image" className="space-y-6">
+                <div className="max-w-2xl mx-auto">
+                  <div className="text-center space-y-2 mb-6">
+                    <h3 className="text-2xl font-bold">Generate Educational Images</h3>
+                    <p className="text-muted-foreground">
+                      Create diagrams, illustrations, or visual aids for your studies
+                    </p>
+                  </div>
+                  <ImageGenerator />
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
         </ScrollArea>
 
