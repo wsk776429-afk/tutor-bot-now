@@ -4,12 +4,13 @@ import { VoiceControls } from "@/components/VoiceControls";
 import { FileUpload } from "@/components/FileUpload";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ImageGenerator } from "@/components/ImageGenerator";
+import { ImageGallery } from "@/components/ImageGallery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Loader2, MessageSquare, Sparkles } from "lucide-react";
+import { Send, Loader2, MessageSquare, Sparkles, Images } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
@@ -22,6 +23,7 @@ interface ChatSession {
   id: string;
   title: string;
   timestamp: Date;
+  messages: Message[];
 }
 
 const Index = () => {
@@ -30,16 +32,58 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    { id: "1", title: "New Chat", timestamp: new Date() },
-  ]);
-  const [currentSessionId, setCurrentSessionId] = useState("1");
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    const saved = localStorage.getItem("astra_sessions");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((s: any) => ({
+          ...s,
+          timestamp: new Date(s.timestamp),
+        }));
+      } catch (e) {
+        return [{ id: "1", title: "New Chat", timestamp: new Date(), messages: [] }];
+      }
+    }
+    return [{ id: "1", title: "New Chat", timestamp: new Date(), messages: [] }];
+  });
+  const [currentSessionId, setCurrentSessionId] = useState(() => {
+    const saved = localStorage.getItem("astra_current_session");
+    return saved || "1";
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    // Load current session messages
+    const currentSession = sessions.find((s) => s.id === currentSessionId);
+    if (currentSession) {
+      setMessages(currentSession.messages || []);
+    }
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    // Save sessions to localStorage
+    localStorage.setItem("astra_sessions", JSON.stringify(sessions));
+  }, [sessions]);
+
+  useEffect(() => {
+    // Save current session
+    localStorage.setItem("astra_current_session", currentSessionId);
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    // Update current session messages
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === currentSessionId ? { ...s, messages } : s
+      )
+    );
   }, [messages]);
 
   const scrollToBottom = () => {
@@ -203,6 +247,7 @@ const Index = () => {
       id: Date.now().toString(),
       title: "New Chat",
       timestamp: new Date(),
+      messages: [],
     };
     setSessions((prev) => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
@@ -247,14 +292,18 @@ const Index = () => {
         <ScrollArea className="flex-1 p-6">
           <div className="max-w-4xl mx-auto">
             <Tabs defaultValue="chat" className="w-full">
-              <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+              <TabsList className="grid w-full max-w-md mx-auto grid-cols-3 mb-6">
                 <TabsTrigger value="chat" className="gap-2">
                   <MessageSquare className="w-4 h-4" />
                   Chat
                 </TabsTrigger>
                 <TabsTrigger value="image" className="gap-2">
                   <Sparkles className="w-4 h-4" />
-                  Generate Image
+                  Generate
+                </TabsTrigger>
+                <TabsTrigger value="gallery" className="gap-2">
+                  <Images className="w-4 h-4" />
+                  Gallery
                 </TabsTrigger>
               </TabsList>
 
@@ -312,7 +361,19 @@ const Index = () => {
                       Create diagrams, illustrations, or visual aids for your studies
                     </p>
                   </div>
-                  <ImageGenerator />
+                  <ImageGenerator 
+                    onImageGenerated={(url) => {
+                      if ((window as any).saveToGallery) {
+                        (window as any).saveToGallery(url, "Generated image");
+                      }
+                    }}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="gallery" className="space-y-6">
+                <div className="max-w-4xl mx-auto">
+                  <ImageGallery />
                 </div>
               </TabsContent>
             </Tabs>
