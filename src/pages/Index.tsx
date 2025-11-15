@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Loader2, MessageSquare, Sparkles, Images } from "lucide-react";
+import { Send, Loader2, MessageSquare, Sparkles, Images, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import jsPDF from "jspdf";
 
 interface Message {
   role: "user" | "assistant";
@@ -262,6 +263,112 @@ const Index = () => {
     }
   };
 
+  const exportChatAsText = () => {
+    if (messages.length === 0) {
+      toast({
+        title: "No messages",
+        description: "There are no messages to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentSession = sessions.find((s) => s.id === currentSessionId);
+    const sessionTitle = currentSession?.title || "Chat";
+    
+    let textContent = `${sessionTitle}\n`;
+    textContent += `Exported on: ${new Date().toLocaleString()}\n`;
+    textContent += `${"=".repeat(50)}\n\n`;
+    
+    messages.forEach((msg) => {
+      const role = msg.role === "user" ? "You" : "Assistant";
+      const agent = msg.agent ? ` (${msg.agent})` : "";
+      textContent += `${role}${agent}:\n${msg.content}\n\n`;
+    });
+
+    const blob = new Blob([textContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${sessionTitle.replace(/[^a-z0-9]/gi, "_")}_${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Exported",
+      description: "Chat exported as text file",
+    });
+  };
+
+  const exportChatAsPDF = () => {
+    if (messages.length === 0) {
+      toast({
+        title: "No messages",
+        description: "There are no messages to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentSession = sessions.find((s) => s.id === currentSessionId);
+    const sessionTitle = currentSession?.title || "Chat";
+    
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const maxWidth = pageWidth - 2 * margin;
+    let yPosition = 20;
+
+    // Title
+    doc.setFontSize(18);
+    doc.text(sessionTitle, margin, yPosition);
+    yPosition += 10;
+
+    // Date
+    doc.setFontSize(10);
+    doc.text(`Exported on: ${new Date().toLocaleString()}`, margin, yPosition);
+    yPosition += 15;
+
+    // Messages
+    doc.setFontSize(12);
+    messages.forEach((msg) => {
+      const role = msg.role === "user" ? "You" : "Assistant";
+      const agent = msg.agent ? ` (${msg.agent})` : "";
+      
+      // Check if we need a new page
+      if (yPosition > doc.internal.pageSize.getHeight() - 40) {
+        doc.addPage();
+        yPosition = 20;
+      }
+
+      // Role header
+      doc.setFont("helvetica", "bold");
+      doc.text(`${role}${agent}:`, margin, yPosition);
+      yPosition += 7;
+
+      // Message content
+      doc.setFont("helvetica", "normal");
+      const lines = doc.splitTextToSize(msg.content, maxWidth);
+      lines.forEach((line: string) => {
+        if (yPosition > doc.internal.pageSize.getHeight() - 40) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        doc.text(line, margin, yPosition);
+        yPosition += 7;
+      });
+
+      yPosition += 5;
+    });
+
+    doc.save(`${sessionTitle.replace(/[^a-z0-9]/gi, "_")}_${Date.now()}.pdf`);
+
+    toast({
+      title: "Exported",
+      description: "Chat exported as PDF file",
+    });
+  };
+
   return (
     <div className="flex h-screen relative overflow-hidden">
       {/* Animated background elements */}
@@ -281,12 +388,38 @@ const Index = () => {
 
       <div className="flex-1 flex flex-col relative z-10">
         <header className="border-b border-border bg-card/80 backdrop-blur-xl px-6 py-4 shadow-sm">
-          <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Homework Helper 24/7
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Your AI-powered study assistant
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                Homework Helper 24/7
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Your AI-powered study assistant
+              </p>
+            </div>
+            {messages.length > 0 && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportChatAsText}
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Export as Text
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportChatAsPDF}
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Export as PDF
+                </Button>
+              </div>
+            )}
+          </div>
         </header>
 
         <ScrollArea className="flex-1 p-6">
