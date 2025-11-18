@@ -144,11 +144,34 @@ const Index = () => {
       }
     } catch (error: any) {
       console.error("Chat error:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to get response",
-        variant: "destructive",
-      });
+
+      const errorMessage = error?.message || "Failed to get response";
+      const status = error?.status ?? error?.code;
+
+      if (
+        status === 402 ||
+        errorMessage.includes("Payment required") ||
+        errorMessage.toLowerCase().includes("credits")
+      ) {
+        toast({
+          title: "Out of AI credits",
+          description:
+            "Your workspace has run out of AI credits. Please add credits in Settings → Workspace → Usage to continue using homework help.",
+          variant: "destructive",
+        });
+      } else if (status === 429 || errorMessage.toLowerCase().includes("rate limit")) {
+        toast({
+          title: "Rate limit exceeded",
+          description: "Too many requests in a short time. Please wait a moment and try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
