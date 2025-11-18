@@ -5,16 +5,149 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const REQUEST_TIMEOUT = 30000; // 30 seconds
+const MAX_PAYLOAD_SIZE = 100000; // 100KB
+const MAX_MESSAGES = 50;
+
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function log(level: string, requestId: string, message: string, data?: any) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    requestId,
+    message,
+    ...(data && { data }),
+  };
+  console.log(JSON.stringify(logEntry));
+}
+
+function validateMessages(messages: any): { valid: boolean; error?: string } {
+  if (!Array.isArray(messages)) {
+    return { valid: false, error: "Messages must be an array" };
+  }
+  
+  if (messages.length === 0) {
+    return { valid: false, error: "Messages array cannot be empty" };
+  }
+  
+  if (messages.length > MAX_MESSAGES) {
+    return { valid: false, error: `Too many messages (max ${MAX_MESSAGES})` };
+  }
+  
+  for (const msg of messages) {
+    if (!msg.role || !msg.content) {
+      return { valid: false, error: "Each message must have role and content" };
+    }
+    if (!["user", "assistant", "system"].includes(msg.role)) {
+      return { valid: false, error: "Invalid message role" };
+    }
+    if (typeof msg.content !== "string") {
+      return { valid: false, error: "Message content must be a string" };
+    }
+    if (msg.content.length > 10000) {
+      return { valid: false, error: "Message content too long (max 10000 chars)" };
+    }
+  }
+  
+  return { valid: true };
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError") {
+      throw new Error("Request timeout");
+    }
+    throw error;
+  }
+}
+
 serve(async (req) => {
+  const requestId = generateRequestId();
+  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  log("info", requestId, "Incoming request", { method: req.method });
+
   try {
-    const { messages } = await req.json();
+    // Validate content-type
+    const contentType = req.headers.get("content-type");
+    if (!contentType?.includes("application/json")) {
+      log("warn", requestId, "Invalid content-type", { contentType });
+      return new Response(
+        JSON.stringify({ error: "Content-Type must be application/json" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Check payload size
+    const contentLength = req.headers.get("content-length");
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+      log("warn", requestId, "Payload too large", { contentLength });
+      return new Response(
+        JSON.stringify({ error: "Payload too large" }),
+        {
+          status: 413,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Parse and validate request body
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      log("error", requestId, "Invalid JSON payload");
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON in request body" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+
+    const { messages } = body;
+
+    // Validate messages
+    const validation = validateMessages(messages);
+    if (!validation.valid) {
+      log("warn", requestId, "Validation failed", { error: validation.error });
+      return new Response(
+        JSON.stringify({ error: validation.error }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    log("info", requestId, "Request validated", { messageCount: messages.length });
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
+      log("error", requestId, "LOVABLE_API_KEY not configured");
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
@@ -39,30 +172,42 @@ serve(async (req) => {
       systemPrompt = "You are a Research Agent. Help students explore topics, find reliable information, and understand complex subjects. Provide well-structured, educational responses.";
     }
 
-    console.log("Using agent:", agent);
+    log("info", requestId, "Agent selected", { agent });
 
-    // Call Lovable AI
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+    // Call Lovable AI with timeout
+    const response = await fetchWithTimeout(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages,
+          ],
+          temperature: 0.7,
+          max_tokens: 1000,
+        }),
       },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
-        temperature: 0.7,
-        max_tokens: 1000,
-      }),
-    });
+      REQUEST_TIMEOUT
+    );
 
     if (!response.ok) {
+      log("error", requestId, "AI gateway error", { 
+        status: response.status,
+        statusText: response.statusText 
+      });
+
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+          JSON.stringify({ 
+            error: "Rate limit exceeded. Please try again later.",
+            code: "RATE_LIMIT_EXCEEDED"
+          }),
           {
             status: 429,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -71,7 +216,10 @@ serve(async (req) => {
       }
       if (response.status === 402) {
         return new Response(
-          JSON.stringify({ error: "Payment required. Please add credits to your workspace." }),
+          JSON.stringify({ 
+            error: "Payment required. Please add credits to your workspace.",
+            code: "PAYMENT_REQUIRED"
+          }),
           {
             status: 402,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -80,14 +228,27 @@ serve(async (req) => {
       }
       
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error("AI gateway error");
+      log("error", requestId, "AI gateway detailed error", { errorText });
+      
+      return new Response(
+        JSON.stringify({ 
+          error: "AI service error. Please try again.",
+          code: "AI_SERVICE_ERROR"
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const data = await response.json();
     const reply = data.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
 
-    console.log("Response generated successfully");
+    log("info", requestId, "Response generated successfully", { 
+      agent,
+      replyLength: reply.length 
+    });
 
     return new Response(
       JSON.stringify({ agent, reply }),
@@ -95,10 +256,31 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
-  } catch (error) {
-    console.error("Chat error:", error);
+  } catch (error: any) {
+    log("error", requestId, "Unhandled error", { 
+      message: error?.message,
+      stack: error?.stack 
+    });
+
+    // Handle specific error types
+    if (error?.message === "Request timeout") {
+      return new Response(
+        JSON.stringify({ 
+          error: "Request timed out. Please try again.",
+          code: "TIMEOUT"
+        }),
+        {
+          status: 504,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({ 
+        error: error instanceof Error ? error.message : "Unknown error",
+        code: "INTERNAL_ERROR"
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
