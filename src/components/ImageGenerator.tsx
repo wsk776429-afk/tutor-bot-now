@@ -71,7 +71,21 @@ export const ImageGenerator = ({ onImageGenerated }: ImageGeneratorProps) => {
       }
     } catch (error: any) {
       console.error("Error generating image:", error);
-      toast.error(error.message || "Failed to generate image");
+      
+      // Handle specific error types
+      const errorMessage = error.message || "Failed to generate image";
+      
+      if (errorMessage.includes("Payment required") || errorMessage.includes("credits")) {
+        toast.error("Out of AI credits. Please add credits in Settings → Workspace → Usage to continue generating images.", {
+          duration: 6000,
+        });
+      } else if (errorMessage.includes("Rate limit")) {
+        toast.error("Rate limit exceeded. Please wait a moment and try again.", {
+          duration: 5000,
+        });
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setIsGenerating(false);
     }
